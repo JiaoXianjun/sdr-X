@@ -1,3 +1,5 @@
+// Jiao Xianjun (putaoshu@gmail.com)
+// 2013-09-27: try to make a udp based IQ relay
 /*
  * rtl-sdr, turns your Realtek RTL2832 based DVB dongle into a SDR receiver
  * Copyright (C) 2012 by Steve Markgraf <steve@steve-m.de>
@@ -21,6 +23,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+//-----------------------
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+//-----------------------
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -43,6 +50,15 @@ static int do_exit = 0;
 static uint32_t bytes_to_read = 0;
 static rtlsdr_dev_t *dev = NULL;
 
+//---------------------------------------------
+int fd = 0;
+struct sockaddr_in addr={0};
+uint32_t buf_offset = 0;
+uint32_t sendto_flag = 0;
+uint32_t sendto_len = 0;
+#define LEN_UDP_PACKET 32768
+//---------------------------------------------
+
 void usage(void)
 {
 	fprintf(stderr,
@@ -53,6 +69,7 @@ void usage(void)
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-b output_block_size (default: 16 * 16384)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
+		"\t[-p UDP port number (default: 6666)]\n"
 		"\t[-S force sync output (default: async)]\n"
 		"\tfilename (a '-' dumps samples to stdout)\n\n");
 	exit(1);
@@ -91,10 +108,19 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 			rtlsdr_cancel_async(dev);
 		}
 
-		if (fwrite(buf, 1, len, (FILE*)ctx) != len) {
-			fprintf(stderr, "Short write, samples lost, exiting!\n");
-			rtlsdr_cancel_async(dev);
-		}
+//		if (fwrite(buf, 1, len, (FILE*)ctx) != len) {
+
+    buf_offset=0;
+    while (buf_offset<len)
+    {
+      sendto_len = ( (buf_offset+LEN_UDP_PACKET) <= len)? LEN_UDP_PACKET : (len-buf_offset);
+      if ( ( sendto_flag=sendto(fd, buf + buf_offset, sendto_len, 0, (struct sockaddr*)&addr,sizeof(addr)) ) != sendto_len) {
+        fprintf(stderr, "Short write, samples lost, exiting! %u %u %u\n", sendto_len, sendto_flag, buf_offset);
+        rtlsdr_cancel_async(dev);
+        break;
+      }
+      buf_offset = buf_offset + sendto_len;
+    }
 
 		if (bytes_to_read > 0)
 			bytes_to_read -= len;
@@ -114,16 +140,20 @@ int main(int argc, char **argv)
 	FILE *file;
 	uint8_t *buffer;
 	uint32_t dev_index = 0;
+	uint32_t udp_port = 6666;
 	uint32_t frequency = 100000000;
 	uint32_t samp_rate = DEFAULT_SAMPLE_RATE;
 	uint32_t out_block_size = DEFAULT_BUF_LENGTH;
 	int device_count;
 	char vendor[256], product[256], serial[256];
 
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:S::")) != -1) {
+	while ((opt = getopt(argc, argv, "d:p:f:g:s:b:n:S::")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = atoi(optarg);
+			break;
+    case 'p':
+			udp_port = atoi(optarg);
 			break;
 		case 'f':
 			frequency = (uint32_t)atof(optarg);
@@ -183,6 +213,20 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "Using device %d: %s\n",
 		dev_index, rtlsdr_get_device_name(dev_index));
+
+//--------------------------------------------------
+  fd = socket(AF_INET,SOCK_DGRAM,0);
+  if(fd==-1)
+  {
+      perror("socket");
+      exit(-1);
+  }
+  fprintf(stderr, "create socket OK!\n");
+  //create an send address
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(udp_port);
+  addr.sin_addr.s_addr=inet_addr("127.0.0.1");
+//--------------------------------------------------
 
 	r = rtlsdr_open(&dev, dev_index);
 	if (r < 0) {
@@ -292,6 +336,7 @@ int main(int argc, char **argv)
 
 	rtlsdr_close(dev);
 	free (buffer);
+	close(fd);
 out:
 	return r >= 0 ? r : -r;
 }
