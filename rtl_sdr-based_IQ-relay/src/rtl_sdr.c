@@ -110,19 +110,25 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 
 //		if (fwrite(buf, 1, len, (FILE*)ctx) != len) {
 
-    buf_offset=0;
-    while (buf_offset<len) // len always is 262144
-    {
-      sendto_len = ( (buf_offset+LEN_UDP_PACKET) <= len)? LEN_UDP_PACKET : (len-buf_offset);
+//    buf_offset=0;
+//    while (buf_offset<len) // len always is 262144
+//    {
+//      sendto_len = ( (buf_offset+LEN_UDP_PACKET) <= len)? LEN_UDP_PACKET : (len-buf_offset);
+//
+////      fprintf(stderr, "%u %u %u\n", len, buf_offset, sendto_len);
+//
+//      if ( ( sendto_flag=sendto(fd, buf + buf_offset, sendto_len, 0, (struct sockaddr*)&addr,sizeof(addr)) ) != sendto_len) {
+//        fprintf(stderr, "Short write, samples lost, exiting! %u %u %u\n", sendto_len, sendto_flag, buf_offset);
+//        rtlsdr_cancel_async(dev);
+//        break;
+//      }
+//      buf_offset = buf_offset + sendto_len;
+//    }
 
-//      fprintf(stderr, "%u %u %u\n", len, buf_offset, sendto_len);
-
-      if ( ( sendto_flag=sendto(fd, buf + buf_offset, sendto_len, 0, (struct sockaddr*)&addr,sizeof(addr)) ) != sendto_len) {
-        fprintf(stderr, "Short write, samples lost, exiting! %u %u %u\n", sendto_len, sendto_flag, buf_offset);
-        rtlsdr_cancel_async(dev);
-        break;
-      }
-      buf_offset = buf_offset + sendto_len;
+    sendto_len = LEN_UDP_PACKET;
+    if ( ( sendto_flag=sendto(fd, buf, sendto_len, 0, (struct sockaddr*)&addr,sizeof(addr)) ) != sendto_len) {
+      fprintf(stderr, "Short write, samples lost, exiting! %u %u\n", sendto_len, sendto_flag);
+      rtlsdr_cancel_async(dev);
     }
 
 		if (bytes_to_read > 0)
